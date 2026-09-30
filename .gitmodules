@@ -1,7 +1,0 @@
-[submodule "tempo"]
-	path = tempo
-	url = https://github.com/ThaiFi/tempo.git
-	branch = feat/private-chain-genesis
-[submodule "zones"]
-	path = zones
-	url = https://github.com/tempoxyz/zones.git

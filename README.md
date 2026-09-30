@@ -1,123 +1,169 @@
 # ThaiFi Node
 
-Private Tempo chain + Zone deployment, based on [tempoxyz/tempo](https://github.com/tempoxyz/tempo) and [tempoxyz/zones](https://github.com/tempoxyz/zones).
+คู่มือเปิด node ของ **ThaiFi Chain** (chain id **17**) — blockchain ที่ fork จาก [Tempo](https://github.com/tempoxyz/tempo) ใช้ fee token เป็น **pathUSD** (6 decimals) และ block time 250ms
 
-## Structure (git submodules)
+Node ประเภทที่คู่มือนี้รองรับ: **full node / RPC follower** (ไม่ใช่ validator — การเพิ่ม validator ต้องได้รับอนุมัติจากทาง ThaiFi)
 
-| Path | Repo | Ref |
-|------|------|-----|
-| `tempo/` | [ThaiFi/tempo](https://github.com/ThaiFi/tempo) (fork) | branch `feat/private-chain-genesis` |
-| `zones/` | [tempoxyz/zones](https://github.com/tempoxyz/tempo) (upstream) | pinned to tested commit `48e63e37` |
+---
 
-The tempo fork carries private-chain genesis flags not (yet) upstream:
+## 1. ความต้องการของระบบ
 
-- `--zone-factory-owner <ADDR>` — custom ZoneFactory owner (upstream hardcodes `INITIAL_FACTORY_OWNER`)
-- `--genesis-timestamp <UNIX>` — chain start time
-- `--gas-token-name/symbol/currency` — customize the primary gas token
+| รายการ | ขั้นต่ำ | แนะนำ |
+|---|---|---|
+| OS | Linux x86_64 (ทำงานบน Docker) | Ubuntu 22.04+ |
+| CPU | 4 cores | 8 cores |
+| RAM | 8 GB | 16 GB |
+| Disk | 60 GB | 200 GB SSD/NVMe |
+| ซอฟต์แวร์ | Docker + Docker Compose v2 | — |
+| Ports | `30303` (TCP+UDP), `8545` (HTTP), `8546` (WS) | — |
 
-> **Note:** zones is pinned because the zone sequencer speaks the **T10** portal ABI.
-> Upstream zones may move to T12; keep both sides consistent.
+> ⚠️ **CPU เก่า**: image ทางการ compile ด้วย instruction set ใหม่ — เครื่องที่ CPU ไม่มี AVX2 (เช่น Intel รุ่นก่อน Sandy Bridge) จะเจอ `SIGILL` ตอนรันจริง (ทั้งที่ `--version` ผ่าน) ต้อง build จาก source เองด้วย `RUSTFLAGS="-C target-cpu=x86-64"` ดู §7
 
-## Clone
+## 2. Quick Start (แนะนำ — เริ่มจาก snapshot)
 
-```bash
-git clone --recurse-submodules https://github.com/ThaiFi/node.git
-cd node
-```
-
-## Build
+แทนการ sync จาก genesis หลายชั่วโมง ให้ดาวน์โหลด snapshot ล่าสุดจาก ThaiFi (~3 GB, ใช้เวลาไม่กี่นาที):
 
 ```bash
-# L1 node + genesis tooling
-cd tempo && cargo build --release --bin tempo --bin tempo-xtask && cd ..
+# 1) โคลน repo นี้ (มี docker-compose.yml + genesis.json พร้อม)
+git clone https://github.com/ThaiFi/node.git thaifi-node
+cd thaifi-node
 
-# Zone node + tooling
-cd zones && cargo build --release --bin tempo-zone --bin tempo-xtask && cd ..
+# 2) สร้าง data dir + P2P key ของตัวเอง
+mkdir -p data
+printf '%s' "$(openssl rand -hex 32)" > data/discovery-secret
+
+# 3) ดาวน์โหลด snapshot ล่าสุด (verify checksum ให้เอง)
+docker run --rm \
+  -v $PWD/data:/data \
+  -v $PWD/genesis.json:/config/genesis.json:ro \
+  ghcr.io/tempoxyz/tempo:latest \
+  download \
+  --manifest-url https://snapshots.thaifi.com/snapshots/current/manifest.json \
+  --datadir /data \
+  --chain /config/genesis.json \
+  --force -y
+
+# 4) เปิด node
+docker compose up -d
 ```
 
-Prereqs: Rust (rustup), Foundry 1.8+ (`cast`, `forge`), `just`, `jq`.
+> ใช้ `--full` แทน `-y` ถ้าต้องการข้อมูลครบทุก component (receipts, rocksdb indices — เหมาะกับ node ที่ทำ explorer/archive, โหลดเพิ่ม ~2 GB)
 
-## Genesis (3-validator private chain, chain ID 17)
+## 3. ตรวจสอบว่า node sync แล้ว
 
 ```bash
-cd tempo
-./target/release/tempo-xtask generate-genesis \
-  --chain-id 17 \
-  --accounts 0 \
-  --pathusd-amount 1000000 \
-  --pathusd-admin <ADMIN_ADDR> \
-  --no-extra-tokens \
-  --no-pairwise-liquidity \
-  --validators "127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002" \
-  --validator-addresses <V1_ADDR>,<V2_ADDR>,<V3_ADDR> \
-  --zone-factory-owner <FACTORY_OWNER_ADDR> \
-  --t11-time 9999999998 \
-  --t12-time 9999999999 \
-  --output <OUT_DIR>
+# block ของ node เรา
+curl -s -X POST http://localhost:8545 \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
+
+# block head ของ chain (ต้องตรงกัน)
+curl -s -X POST https://rpc.thaifi.com \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 ```
 
-Key points:
-
-- `--t11-time/--t12-time` in the future keeps the **T10** ZonePortal runtime
-  (the zone sequencer's `submitBatch` ABI matches T10, not T12).
-- `--no-extra-tokens --no-pairwise-liquidity` = pathUSD-only minimal genesis.
-  FeeAMM liquidity seeding needs ≥ 30,000 pathUSD held by `--pathusd-admin`;
-  skip it (or raise the amount) for a minimal supply.
-- Genesis generates `signing.key` + `signing.share` per validator under `<OUT_DIR>/<ip:port>/`.
-
-## Run L1 validators (production mode, 3 nodes)
+node จะ follow chain ผ่าน public follow stream (`wss://rpc.thaifi.com/ws`) อัตโนมัติ — ตรวจ log ได้ด้วย:
 
 ```bash
-tempo node --chain <OUT_DIR>/genesis.json \
-  --datadir <NODE_DATA_DIR> \
-  --consensus.signing-key <OUT_DIR>/127.0.0.1:3000/signing.key \
-  --consensus.signing-share <OUT_DIR>/127.0.0.1:3000/signing.share \
-  --consensus.listen-address 127.0.0.1:3000 \
-  --consensus.use-local-defaults \
-  --http --http.port 8545 --ws --ws.port 8546 \
-  --authrpc.port 8551 --port 30303 --disable-discovery
-# nodes 2/3: unique HTTP/WS/auth/P2P ports + their own key/share/listen-address
+docker logs thaifi-node --tail 20
+# ปกติจะเห็น: Received new payload ... / Status connected_peers=N latest_block=...
 ```
 
-`--consensus.use-local-defaults` is required on a local/private network:
-Commonware P2P refuses to dial private IPs (127.0.0.1, RFC1918) otherwise.
+**การแพร่กระจายธุรกรรม (P2P):** compose ตั้ง `--trusted-peers` ไว้ที่ validator 3 ตัวของ ThaiFi ให้แล้ว — node เราจะรับ tx/block จาก validator ตรง
 
-## Deploy a zone
+## 4. Sync จาก genesis (ทางเลือก — ไม่โหลด snapshot)
 
 ```bash
-# on L1: create the zone (requires the ZoneFactory owner key)
-cast send 0x5af2000000000000000000000000000000000000 \
-  "createZone((address,bool,bool,address[],address[],address,address[],uint8,string))" \
-  "(<TOKEN>,false,false,[],[],<ZONE_ADMIN>,[<SEQUENCER>],1,<ZONE_RPC_URL>)" \
-  --private-key <FACTORY_OWNER_KEY> --gas-limit 30000000 --legacy
-
-# register the sequencer ECIES encryption key (enables deposits)
-zones/target/release/tempo-xtask set-encryption-key \
-  --l1-rpc-url <L1_HTTP> --portal <PORTAL_ADDR> --private-key <SEQUENCER_KEY>
-
-# generate zone genesis (zone chain ID = (l1_chain_id << 32) | zone_id)
-zones/target/release/tempo-xtask generate-zone-genesis \
-  --output <ZONE_DIR> --chain-id <ZONE_CHAIN_ID> \
-  --admin <ZONE_ADMIN> --sequencer <SEQUENCER> \
-  --l1-rpc-url <L1_HTTP> --tempo-portal <PORTAL_ADDR>
-
-# run the zone sequencer
-zones/target/release/tempo-zone node \
-  --chain <ZONE_DIR>/genesis.json --datadir <ZONE_DATA> \
-  --http --http.port 9545 --ws --ws.port 9546 \
-  --l1.rpc-url ws://<L1_WS> --l1.portal-address <PORTAL_ADDR> \
-  --sequencer-key-file <SEQUENCER_KEY_FILE> --sequencer
+git clone https://github.com/ThaiFi/node.git thaifi-node && cd thaifi-node
+mkdir -p data
+printf '%s' "$(openssl rand -hex 32)" > data/discovery-secret
+docker compose up -d
 ```
 
-Funding notes: accounts need **pathUSD** (fee token), not native ETH.
-Deposits require `approve(portal)` on L1 + `set-encryption-key`;
-withdrawals require `approve(0x1c00...0002 outbox)` on the zone.
-Zone TIP-20 `transfer()` is intentionally disabled (permissioned phase).
+node จะ sync pipeline ทั้งหมดจาก trusted-peers (ใช้เวลาหลายชั่วโมงขึ้นกับความสูงของ chain)
 
-## Update submodules
+## 5. ใช้งาน node
+
+| Endpoint | URL |
+|---|---|
+| JSON-RPC (HTTP) | `http://localhost:8545` |
+| JSON-RPC (WS) | `ws://localhost:8546` |
+
+เพิ่มเครือข่ายใน MetaMask / wallet ที่รองรับ EIP-3085:
+
+| ค่า | ค่า |
+|---|---|
+| Chain ID | `17` (`0x11`) |
+| RPC URL | `https://rpc.thaifi.com` |
+| Currency | `pathUSD` (6 decimals) |
+| Explorer | `https://exp.thaifi.com` |
+
+**ข้อควรรู้ของ Tempo-based chain:**
+- fee/gas จ่ายด้วย **pathUSD** (`0x20c0000000000000000000000000000000000000`, 6 decimals) — ไม่ใช่ native ETH
+- TIP-20 token ทุกตัวใช้ **6 decimals** (ไม่ใช่ 18 แบบ ERC-20 ทั่วไป)
+
+## 6. Snapshots
+
+| URL | ความหมาย |
+|---|---|
+| `https://snapshots.thaifi.com/snapshots/current/manifest.json` | snapshot ล่าสุด (ใช้ตัวนี้เสมอ) |
+| `https://snapshots.thaifi.com/snapshots/<YYYYMMDD-HHMM>/manifest.json` | snapshot แต่ละรอบ (เก็บเป็นประวัติ) |
+| `https://snapshots.thaifi.com/` | หน้ารวมไฟล์ทั้งหมด |
+
+snapshot ถูกสร้างจาก follower node ที่หยุดนิ่ง (consistent) และมี blake3 checksum ของทุกไฟล์ใน `manifest.json` — คำสั่ง `tempo download` ตรวจให้เอง
+
+### อยากสร้าง/โฮสต์ snapshot เอง
+
+บน node ที่ sync แล้ว:
 
 ```bash
-git submodule update --remote tempo   # follow feat/private-chain-genesis
-cd zones && git fetch && git checkout <new-sha> && cd ..
-git commit -am "chore: bump submodules"
+# หยุด node ก่อนเสมอ (database ต้องนิ่งจึงได้ snapshot ที่ consistent)
+docker compose stop
+
+mkdir -p snapshot-output
+docker run --rm \
+  -v $PWD/data:/data \
+  -v $PWD/genesis.json:/genesis.json:ro \
+  -v $PWD/snapshot-output:/output \
+  ghcr.io/tempoxyz/tempo:latest \
+  snapshot-manifest \
+  --source-datadir /data \
+  --consensus.datadir /data/consensus \
+  --output-dir /output \
+  --chain /genesis.json \
+  --chain-id 17
+
+docker compose up -d   # เปิด node คืนทันที แล้วค่อยอัปโหลด
+# อัปโหลดไฟล์ทั้งหมดใน snapshot-output/ ไป S3/R2/HTTP server แล้วชี้ --manifest-url ที่ manifest.json
 ```
+
+## 7. Troubleshooting
+
+| อาการ | สาเหตุ/วิธีแก้ |
+|---|---|
+| `connected_peers=0` นานผิดปกติ | firewall บล็อก `30303` TCP/UDP — เปิด outbound + inbound ให้ครบ |
+| `Illegal instruction` (SIGILL) เมื่อรัน container | CPU เก่าไม่มี AVX2 — build image จาก source: `git clone https://github.com/tempoxyz/tempo` ที่ commit เดียวกับ image ที่ chain ใช้ แล้ว `RUSTFLAGS="-C target-cpu=x86-64" cargo build --release --bin tempo` แล้วแทนที่ `/usr/local/bin/tempo` ใน image |
+| `download` ฟ้อง `Server did not return file size` | ปลายทาง manifest/CDN ไม่ส่ง `Content-Length` — ใช้ URL ทางการ `https://snapshots.thaifi.com/...` หรือตรวจ reverse proxy ของตัวเองว่าส่ง header ครบ |
+| node sync แล้วแต่ block ไม่เดิน | ตรวจว่า `--follow` ชี้ `wss://rpc.thaifi.com/ws` และ log ไม่มี error ฝั่ง consensus; ลอง `docker compose up -d --force-recreate` |
+| port ชนกับ service อื่น | เปลี่ยน `8545/8546/30303/30306/8551` ใน `docker-compose.yml` |
+| datadir เสียหาย (`database is corrupted`) | **ห้าม copy/move datadir ขณะ node รันอยู่** — หยุด node ก่อนเสมอ; กรณีเสียหายให้ลบ `data/` แล้ว restore จาก snapshot ใหม่ |
+
+## 8. ข้อมูล Chain
+
+| ค่า | ค่า |
+|---|---|
+| Chain ID | 17 |
+| ประเภท | Tempo fork (T11 active) |
+| Block time | 250 ms |
+| Fee token | pathUSD `0x20c0000000000000000000000000000000000000` (6 dec) |
+| Public RPC | `https://rpc.thaifi.com` |
+| Follow WS | `wss://rpc.thaifi.com/ws` |
+| Explorer | `https://exp.thaifi.com` |
+| Snapshot | `https://snapshots.thaifi.com` |
+| Contract verification | `https://contracts.thaifi.com` |
+| Tokenlist | `https://tokenlist.thaifi.com/list/17` |
+
+---
+
+หากต้องการเป็น **validator** หรือพบปัญหาการเชื่อมต่อ ติดต่อทีม ThaiFi · [thaifi.com](https://thaifi.com)

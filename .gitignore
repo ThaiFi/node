@@ -1,0 +1,4 @@
+data/
+snapshot-output/
+*.log
+.DS_Store
