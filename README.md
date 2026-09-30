@@ -63,7 +63,7 @@ curl -s -X POST https://rpc.thaifi.com \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 ```
 
-node จะ follow chain ผ่าน public follow stream (`wss://rpc.thaifi.com/ws`) อัตโนมัติ — ตรวจ log ได้ด้วย:
+node จะ follow chain ผ่าน public follow stream (`wss://ws.thaifi.com`) อัตโนมัติ — ตรวจ log ได้ด้วย:
 
 ```bash
 docker logs thaifi-node --tail 20
@@ -145,7 +145,7 @@ docker compose up -d   # เปิด node คืนทันที แล้ว
 | `connected_peers=0` นานผิดปกติ | firewall บล็อก `30303` TCP/UDP — เปิด outbound + inbound ให้ครบ |
 | `Illegal instruction` (SIGILL) เมื่อรัน container | CPU เก่าไม่มี AVX2 — build image จาก source: `git clone https://github.com/tempoxyz/tempo` ที่ commit เดียวกับ image ที่ chain ใช้ แล้ว `RUSTFLAGS="-C target-cpu=x86-64" cargo build --release --bin tempo` แล้วแทนที่ `/usr/local/bin/tempo` ใน image |
 | `download` ฟ้อง `Server did not return file size` | ปลายทาง manifest/CDN ไม่ส่ง `Content-Length` — ใช้ URL ทางการ `https://snapshots.thaifi.com/...` หรือตรวจ reverse proxy ของตัวเองว่าส่ง header ครบ |
-| node sync แล้วแต่ block ไม่เดิน | ตรวจว่า `--follow` ชี้ `wss://rpc.thaifi.com/ws` และ log ไม่มี error ฝั่ง consensus; ลอง `docker compose up -d --force-recreate` |
+| node sync แล้วแต่ block ไม่เดิน | ตรวจว่า `--follow` ชี้ `wss://ws.thaifi.com` และ log ไม่มี error ฝั่ง consensus; ลอง `docker compose up -d --force-recreate` |
 | port ชนกับ service อื่น | เปลี่ยน `8545/8546/30303/30306/8551` ใน `docker-compose.yml` |
 | datadir เสียหาย (`database is corrupted`) | **ห้าม copy/move datadir ขณะ node รันอยู่** — หยุด node ก่อนเสมอ; กรณีเสียหายให้ลบ `data/` แล้ว restore จาก snapshot ใหม่ |
 
@@ -158,7 +158,7 @@ docker compose up -d   # เปิด node คืนทันที แล้ว
 | Block time | 250 ms |
 | Fee token | pathUSD `0x20c0000000000000000000000000000000000000` (6 dec) |
 | Public RPC | `https://rpc.thaifi.com` |
-| Follow WS | `wss://rpc.thaifi.com/ws` |
+| Follow WS | `wss://ws.thaifi.com` |
 | Explorer | `https://exp.thaifi.com` |
 | Snapshot | `https://snapshots.thaifi.com` |
 | Contract verification | `https://contracts.thaifi.com` |

@@ -45,4 +45,4 @@ services:
       - none
       # ตาม consensus ผ่าน public follow stream ของ ThaiFi
       - --follow
-      - wss://rpc.thaifi.com/ws
+      - wss://ws.thaifi.com
