@@ -10,6 +10,11 @@ services:
     container_name: thaifi-node
     network_mode: host
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     volumes:
       - ./genesis.json:/config/genesis.json:ro
       - ./data:/data
