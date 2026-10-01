@@ -23,6 +23,8 @@ Node ประเภทที่คู่มือนี้รองรับ: *
 >
 > ⚠️ **หลีกเลี่ยง ZFS สำหรับ datadir**: reth จะตรวจจับและเตือนเองตอน startup — CoW ของ ZFS เข้ากับ MDBX ได้แย่มาก วัดจริงงานเดียวกันเขียนได้ ~4.5 MB/s บน ZFS เทียบกับ ~20 MB/s บน ext4 ถ้ามี ZFS pool ไว้เก็บของทั่วไปก็ดี แต่ให้วาง datadir ไว้บน ext4/xfs แยกต่างหาก
 
+> ⚠️ **ทำไม image ถึง pin ด้วย digest?** downloader รุ่นใหม่ของ upstream (commit `6ef1f812`, ต.ค. 2026) เจอ 2 ปัญหากับ snapshot ของเรา: (1) validate manifest ไม่ผ่านเมื่อมี chunk ว่าง — ฟ้อง `missing plain output checksum metadata` (2) restore สำเร็จแต่ datadir ติด prune loop (§7.1) — จึง pin ไว้ที่ build `0643e37` ที่ทดสอบครบทั้ง node และ download จนกว่า upstream จะแก้
+
 ## 2. Quick Start (แนะนำ — เริ่มจาก snapshot)
 
 แทนการ sync จาก genesis หลายชั่วโมง ให้ดาวน์โหลด snapshot ล่าสุดจาก ThaiFi (~3 GB, ใช้เวลาไม่กี่นาที):
