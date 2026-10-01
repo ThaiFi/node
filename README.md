@@ -40,7 +40,7 @@ printf '%s' "$(openssl rand -hex 32)" > data/discovery-secret
 docker run --rm \
   -v $PWD/data:/data \
   -v $PWD/genesis.json:/config/genesis.json:ro \
-  ghcr.io/tempoxyz/tempo:latest \
+  ghcr.io/tempoxyz/tempo@sha256:1ac53d67fa9738f5a10de50f2e3e3e77f9ac598ad7a8c6bdf68c6921f09194e7 \
   download \
   --manifest-url https://snapshots.thaifi.com/snapshots/current/manifest.json \
   --datadir /data \
@@ -132,7 +132,7 @@ docker run --rm \
   -v $PWD/data:/data \
   -v $PWD/genesis.json:/genesis.json:ro \
   -v $PWD/snapshot-output:/output \
-  ghcr.io/tempoxyz/tempo:latest \
+  ghcr.io/tempoxyz/tempo@sha256:1ac53d67fa9738f5a10de50f2e3e3e77f9ac598ad7a8c6bdf68c6921f09194e7 \
   snapshot-manifest \
   --source-datadir /data \
   --consensus.datadir /data/consensus \

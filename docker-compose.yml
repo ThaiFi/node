@@ -6,7 +6,7 @@
 #   2) (แนะนำ) โหลด snapshot แทนการ sync จาก genesis — ดู README.md §2
 services:
   node:
-    image: ghcr.io/tempoxyz/tempo:latest
+    image: ghcr.io/tempoxyz/tempo@sha256:1ac53d67fa9738f5a10de50f2e3e3e77f9ac598ad7a8c6bdf68c6921f09194e7
     container_name: thaifi-node
     network_mode: host
     restart: unless-stopped
