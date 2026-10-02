@@ -230,7 +230,7 @@ docker run --rm tempo:x86-64 --version   # smoke test
 | ค่า | ค่า |
 |---|---|
 | Chain ID | 17 |
-| ประเภท | Tempo fork (T11 active) |
+| ประเภท | Tempo fork (T11 active — **T12 กำหนดวิ่ง 2026-10-06 14:00 UTC / 21:00 ไทย**) |
 | Block time | 250 ms |
 | Fee token | pathUSD `0x20c0000000000000000000000000000000000000` (6 dec) |
 | Public RPC | `https://rpc.thaifi.com` |
