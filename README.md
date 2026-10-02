@@ -1,44 +1,44 @@
 # ThaiFi Node
 
-คู่มือเปิด node ของ **ThaiFi Chain** (chain id **17**) — blockchain ที่ fork จาก [Tempo](https://github.com/tempoxyz/tempo) ใช้ fee token เป็น **pathUSD** (6 decimals) และ block time 250ms
+Guide to running a node on **ThaiFi Chain** (chain id **17**) — a blockchain forked from [Tempo](https://github.com/tempoxyz/tempo) that uses **pathUSD** (6 decimals) as the fee token, with a 250 ms block time.
 
-Node ประเภทที่คู่มือนี้รองรับ: **full node / RPC follower** (ไม่ใช่ validator — การเพิ่ม validator ต้องได้รับอนุมัติจากทาง ThaiFi)
+Node types covered by this guide: **full node / RPC follower** (not a validator — adding a validator requires approval from the ThaiFi team).
 
 ---
 
-## 1. ความต้องการของระบบ
+## 1. System Requirements
 
-| รายการ | ขั้นต่ำ | แนะนำ |
+| Item | Minimum | Recommended |
 |---|---|---|
-| OS | Linux x86_64 (ทำงานบน Docker) | Ubuntu 22.04+ |
+| OS | Linux x86_64 (runs in Docker) | Ubuntu 22.04+ |
 | CPU | 4 cores | 8 cores |
 | RAM | 8 GB | 16 GB |
 | Disk | 60 GB | 200 GB SSD/NVMe |
-| ซอฟต์แวร์ | Docker + Docker Compose v2 | — |
+| Software | Docker + Docker Compose v2 | — |
 | Ports | `30303` (TCP+UDP), `8545` (HTTP), `8546` (WS) | — |
 
-> ⚠️ **CPU เก่า**: image ทางการ compile ด้วย instruction set ใหม่ — เครื่องที่ CPU ไม่มี AVX2 (เช่น Intel รุ่นก่อน Sandy Bridge) จะเจอ `SIGILL` ตอนรันจริง (ทั้งที่ `--version` ผ่าน) ต้อง build จาก source เองด้วย `RUSTFLAGS="-C target-cpu=x86-64"` ดู §7.2
+> ⚠️ **Old CPUs**: the official image is compiled with newer instruction sets — machines whose CPU lacks AVX2 (e.g. Intel pre-Sandy Bridge) will hit `SIGILL` at runtime (even though `--version` works). You must build from source yourself with `RUSTFLAGS="-C target-cpu=x86-64"`, see §7.2.
 
-> ⚠️ **ประเภทดิสก์**: datadir ของ node คือ workload random-write หนัก (MDBX) — **SSD/NVMe เกือบจำเป็น** เพราะ chain ผลิต block ทุก 250 ms (4 blocks/s) การทดสอบจริงบน HDD 5400rpm execute ได้เพียง ~2 blocks/s จึงไม่มีวันตาม tip ทัน (gap ขยายตัวเรื่อย ๆ)
+> ⚠️ **Disk type**: the node datadir is a heavy random-write workload (MDBX) — **SSD/NVMe is practically a requirement**, because the chain produces a block every 250 ms (4 blocks/s). Real-world testing on a 5400rpm HDD managed to execute only ~2 blocks/s, so it can never keep up with the tip (the gap keeps growing).
 >
-> ⚠️ **หลีกเลี่ยง ZFS สำหรับ datadir**: reth จะตรวจจับและเตือนเองตอน startup — CoW ของ ZFS เข้ากับ MDBX ได้แย่มาก วัดจริงงานเดียวกันเขียนได้ ~4.5 MB/s บน ZFS เทียบกับ ~20 MB/s บน ext4 ถ้ามี ZFS pool ไว้เก็บของทั่วไปก็ดี แต่ให้วาง datadir ไว้บน ext4/xfs แยกต่างหาก
+> ⚠️ **Avoid ZFS for the datadir**: reth detects and warns about this at startup — ZFS CoW interacts very poorly with MDBX; measured on the same workload, writes reach only ~4.5 MB/s on ZFS vs ~20 MB/s on ext4. A ZFS pool is fine for general storage, but keep the datadir on a separate ext4/xfs filesystem.
 
-> ⚠️ **ทำไม image ถึง pin ด้วย digest?** downloader รุ่นใหม่ของ upstream (commit `6ef1f812`, ต.ค. 2026) เจอ 2 ปัญหากับ snapshot ของเรา: (1) validate manifest ไม่ผ่านเมื่อมี chunk ว่าง — ฟ้อง `missing plain output checksum metadata` (2) restore สำเร็จแต่ datadir ติด prune loop (§7.1) — จึง pin ไว้ที่ build `0643e37` ที่ทดสอบครบทั้ง node และ download จนกว่า upstream จะแก้
+> ⚠️ **Why is the image pinned by digest?** The newer upstream downloader (commit `6ef1f812`, Oct 2026) has 2 problems with our snapshot: (1) manifest validation fails when there are empty chunks — it reports `missing plain output checksum metadata`; (2) restore succeeds but the datadir gets stuck in a prune loop (§7.1). So we pin to build `0643e37`, fully tested for both node and download, until upstream fixes it.
 
-## 2. Quick Start (แนะนำ — เริ่มจาก snapshot)
+## 2. Quick Start (recommended — start from a snapshot)
 
-แทนการ sync จาก genesis หลายชั่วโมง ให้ดาวน์โหลด snapshot ล่าสุดจาก ThaiFi (~3 GB, ใช้เวลาไม่กี่นาที):
+Instead of syncing from genesis for hours, download the latest snapshot from ThaiFi (~3 GB, takes a few minutes):
 
 ```bash
-# 1) โคลน repo นี้ (มี docker-compose.yml + genesis.json พร้อม)
+# 1) Clone this repo (docker-compose.yml + genesis.json included)
 git clone https://github.com/ThaiFi/node.git thaifi-node
 cd thaifi-node
 
-# 2) สร้าง data dir + P2P key ของตัวเอง
+# 2) Create your own data dir + P2P key
 mkdir -p data
 printf '%s' "$(openssl rand -hex 32)" > data/discovery-secret
 
-# 3) ดาวน์โหลด snapshot ล่าสุด (verify checksum ให้เอง)
+# 3) Download the latest snapshot (checksum is verified for you)
 docker run --rm \
   -v $PWD/data:/data \
   -v $PWD/genesis.json:/config/genesis.json:ro \
@@ -49,38 +49,38 @@ docker run --rm \
   --chain /config/genesis.json \
   --force -y
 
-# 4) เปิด node
+# 4) Start the node
 docker compose up -d
 ```
 
-> ใช้ `--full` แทน `-y` ถ้าต้องการข้อมูลครบทุก component (receipts, rocksdb indices — เหมาะกับ node ที่ทำ explorer/archive, โหลดเพิ่ม ~2 GB)
+> Use `--full` instead of `-y` if you want complete data for every component (receipts, rocksdb indices — suited to explorer/archive nodes, ~2 GB extra download).
 
-## 3. ตรวจสอบว่า node sync แล้ว
+## 3. Verify the node is synced
 
 ```bash
-# block ของ node เรา
+# our node's block
 curl -s -X POST http://localhost:8545 \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 
-# block head ของ chain (ต้องตรงกัน)
+# chain head block (the two must match)
 curl -s -X POST https://rpc.thaifi.com \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 ```
 
-node จะ follow chain ผ่าน public follow stream (`wss://ws.thaifi.com`) อัตโนมัติ — ตรวจ log ได้ด้วย:
+The node follows the chain automatically via the public follow stream (`wss://ws.thaifi.com`) — check the logs with:
 
 ```bash
 docker logs thaifi-node --tail 20
-# ปกติจะเห็น: Received new payload ... / Status connected_peers=N latest_block=...
+# You should normally see: Received new payload ... / Status connected_peers=N latest_block=...
 ```
 
-**เช็คว่าตาม tip ทันหรือไม่:** รันสองคำสั่งข้างบนแล้วแปลงผลมาลบกัน — ถ้า gap (ห่างจาก public RPC) คงที่หรือหดจนเหลือไม่กี่ block แปลว่า sync ทัน แต่ถ้า gap **ขยายตัวต่อเนื่อง** แปลว่าเครื่อง execute block ไม่ทันอัตรา 4 blocks/s ของ chain ให้กลับไปดูข้อกำหนดดิสก์ใน §1
+**Check whether it keeps up with the tip:** run the two commands above and subtract the results — if the gap (distance from the public RPC) stays constant or shrinks to just a few blocks, you are synced. But if the gap **keeps growing**, the machine cannot execute blocks at the chain's 4 blocks/s rate — go back and review the disk requirements in §1.
 
-**การแพร่กระจายธุรกรรม (P2P):** compose ตั้ง `--trusted-peers` ไว้ที่ validator 3 ตัวของ ThaiFi ให้แล้ว — node เราจะรับ tx/block จาก validator ตรง
+**Transaction propagation (P2P):** the compose file already sets `--trusted-peers` to ThaiFi's 3 validators — your node receives txs/blocks directly from the validators.
 
-## 4. Sync จาก genesis (ทางเลือก — ไม่โหลด snapshot)
+## 4. Sync from genesis (alternative — no snapshot)
 
 ```bash
 git clone https://github.com/ThaiFi/node.git thaifi-node && cd thaifi-node
@@ -89,44 +89,44 @@ printf '%s' "$(openssl rand -hex 32)" > data/discovery-secret
 docker compose up -d
 ```
 
-node จะ sync pipeline ทั้งหมดจาก trusted-peers (ใช้เวลาหลายชั่วโมงขึ้นกับความสูงของ chain)
+The node syncs the full pipeline from the trusted peers (takes several hours depending on the chain height).
 
-## 5. ใช้งาน node
+## 5. Using the node
 
 | Endpoint | URL |
 |---|---|
 | JSON-RPC (HTTP) | `http://localhost:8545` |
 | JSON-RPC (WS) | `ws://localhost:8546` |
 
-เพิ่มเครือข่ายใน MetaMask / wallet ที่รองรับ EIP-3085:
+Add the network in MetaMask / any EIP-3085-capable wallet:
 
-| ค่า | ค่า |
+| Setting | Value |
 |---|---|
 | Chain ID | `17` (`0x11`) |
 | RPC URL | `https://rpc.thaifi.com` |
 | Currency | `pathUSD` (6 decimals) |
 | Explorer | `https://exp.thaifi.com` |
 
-**ข้อควรรู้ของ Tempo-based chain:**
-- fee/gas จ่ายด้วย **pathUSD** (`0x20c0000000000000000000000000000000000000`, 6 decimals) — ไม่ใช่ native ETH
-- TIP-20 token ทุกตัวใช้ **6 decimals** (ไม่ใช่ 18 แบบ ERC-20 ทั่วไป)
+**Tempo-based chain notes:**
+- fees/gas are paid in **pathUSD** (`0x20c0000000000000000000000000000000000000`, 6 decimals) — not native ETH
+- every TIP-20 token uses **6 decimals** (not 18 like typical ERC-20)
 
 ## 6. Snapshots
 
-| URL | ความหมาย |
+| URL | Description |
 |---|---|
-| `https://snapshots.thaifi.com/snapshots/current/manifest.json` | snapshot ล่าสุด (ใช้ตัวนี้เสมอ) |
-| `https://snapshots.thaifi.com/snapshots/<YYYYMMDD-HHMM>/manifest.json` | snapshot แต่ละรอบ (เก็บเป็นประวัติ) |
-| `https://snapshots.thaifi.com/` | หน้ารวมไฟล์ทั้งหมด |
+| `https://snapshots.thaifi.com/snapshots/current/manifest.json` | latest snapshot (always use this one) |
+| `https://snapshots.thaifi.com/snapshots/<YYYYMMDD-HHMM>/manifest.json` | individual rounds (kept as history) |
+| `https://snapshots.thaifi.com/` | page listing all files |
 
-snapshot ถูกสร้างจาก follower node ที่หยุดนิ่ง (consistent) และมี blake3 checksum ของทุกไฟล์ใน `manifest.json` — คำสั่ง `tempo download` ตรวจให้เอง
+Snapshots are generated from a quiesced (consistent) follower node and include blake3 checksums for every file in `manifest.json` — the `tempo download` command verifies them automatically.
 
-### อยากสร้าง/โฮสต์ snapshot เอง
+### Creating/hosting your own snapshots
 
-บน node ที่ sync แล้ว:
+On an already-synced node:
 
 ```bash
-# หยุด node ก่อนเสมอ (database ต้องนิ่งจึงได้ snapshot ที่ consistent)
+# Always stop the node first (the database must be quiesced for a consistent snapshot)
 docker compose stop
 
 mkdir -p snapshot-output
@@ -142,70 +142,70 @@ docker run --rm \
   --chain /genesis.json \
   --chain-id 17
 
-docker compose up -d   # เปิด node คืนทันที แล้วค่อยอัปโหลด
-# อัปโหลดไฟล์ทั้งหมดใน snapshot-output/ ไป S3/R2/HTTP server แล้วชี้ --manifest-url ที่ manifest.json
+docker compose up -d   # bring the node straight back up, then upload at your leisure
+# Upload everything in snapshot-output/ to an S3/R2/HTTP server and point --manifest-url at manifest.json
 ```
 
 ## 7. Troubleshooting
 
-| อาการ | สาเหตุ/วิธีแก้ |
+| Symptom | Cause / fix |
 |---|---|
-| `connected_peers=0` นานผิดปกติ | firewall บล็อก `30303` TCP/UDP — เปิด outbound + inbound ให้ครบ |
-| `Illegal instruction` (SIGILL) เมื่อรัน container | CPU เก่าไม่มี AVX2 — build image จาก source เอง ดูสเต็ปเต็มและกับดักที่พบจริงใน **§7.2** |
-| build เองแล้ว binary ฟ้อง `GLIBC_2.38 not found` / `CXXABI_1.3.15 not found` | build ผิด base — ต้องใช้ container `rust:1-bookworm` (glibc ตรงกับ image ของ tempo) และถ้าเคย build ด้วย distro อื่นใน dir เดิม ต้อง `rm -rf target` ก่อน ดู **§7.2** |
-| node ค้างที่ stage `Prune`, log `pruned=0` เป็นพันรอบ/วินาที, `eth_blockNumber` นิ่งที่ block ของ snapshot | **prune loop** — พบกับ datadir ที่ restore จาก snapshot วิธีแก้ดู **§7.1** |
-| node เดินแต่ gap กับ public RPC ขยายตัวต่อเนื่อง | เครื่อง execute ไม่ทัน 4 blocks/s — ตามสเปกใน §1 (SSD/NVMe) และย้ำว่า datadir ต้องอยู่บน ext4/xfs ไม่ใช่ ZFS |
-| `download` ฟ้อง `Server did not return file size` | ปลายทาง manifest/CDN ไม่ส่ง `Content-Length` — ใช้ URL ทางการ `https://snapshots.thaifi.com/...` หรือตรวจ reverse proxy ของตัวเองว่าส่ง header ครบ |
-| node sync แล้วแต่ block ไม่เดิน | ตรวจว่า `--follow` ชี้ `wss://ws.thaifi.com` และ log ไม่มี error ฝั่ง consensus; ลอง `docker compose up -d --force-recreate` |
-| port ชนกับ service อื่น | เปลี่ยน `8545/8546/30303/30306/8551` ใน `docker-compose.yml` |
-| datadir เสียหาย (`database is corrupted`) | **ห้าม copy/move datadir ขณะ node รันอยู่** — หยุด node ก่อนเสมอ; กรณีเสียหายให้ลบ `data/` แล้ว restore จาก snapshot ใหม่ |
+| `connected_peers=0` for unusually long | firewall blocking `30303` TCP/UDP — open both outbound and inbound |
+| `Illegal instruction` (SIGILL) when running the container | old CPU without AVX2 — build the image from source; see the full steps and real-world pitfalls in **§7.2** |
+| self-built binary reports `GLIBC_2.38 not found` / `CXXABI_1.3.15 not found` | wrong build base — you must use the `rust:1-bookworm` container (glibc matching the tempo image); if the same dir was previously built with a different distro, `rm -rf target` first, see **§7.2** |
+| node stuck at the `Prune` stage, logging `pruned=0` thousands of times per second, `eth_blockNumber` frozen at the snapshot block | **prune loop** — seen with datadirs restored from a snapshot; fix in **§7.1** |
+| node runs but the gap vs the public RPC keeps growing | the machine cannot execute 4 blocks/s — meet the §1 specs (SSD/NVMe) and make sure the datadir is on ext4/xfs, not ZFS |
+| `download` reports `Server did not return file size` | the manifest/CDN endpoint doesn't send `Content-Length` — use the official URL `https://snapshots.thaifi.com/...` or check that your own reverse proxy sends the full headers |
+| node synced but blocks not advancing | verify `--follow` points to `wss://ws.thaifi.com` and there are no consensus errors in the logs; try `docker compose up -d --force-recreate` |
+| port conflicts with another service | change `8545/8546/30303/30306/8551` in `docker-compose.yml` |
+| corrupted datadir (`database is corrupted`) | **never copy/move the datadir while the node is running** — always stop the node first; if corrupted, delete `data/` and restore from a fresh snapshot |
 
-### 7.1 Node ค้างที่ stage `Prune` — log `pruned=0` วนไม่จบ (พบกับ datadir จาก snapshot)
+### 7.1 Node stuck at the `Prune` stage — endless `pruned=0` log loop (seen with snapshot-restored datadirs)
 
-อาการ: node รันขึ้นได้ตามปกติ แต่ `eth_blockNumber` ค้างที่ block ของ snapshot ตลอดไป ขณะที่ log เอ่อล้นด้วยข้อความนี้หลายพันรอบต่อวินาที พร้อมเขียนดิสก์ไม่หยุด:
+Symptoms: the node starts up normally, but `eth_blockNumber` stays frozen at the snapshot block forever, while the log floods with this message thousands of times per second along with nonstop disk writes:
 
 ```
 sync::stages::prune::exec: Last segment has more data to prune last_segment=SenderRecovery progress=Finished pruned=0
 reth_node_events::node: Committed stage progress pipeline_stages=13/14 stage=Prune checkpoint=4889950 target=5017965
 ```
 
-ต้นตอ: `reth.toml` ใน datadir กำหนด `[prune.segments]` ไว้ แต่ pruner หา prune target ในข้อมูลที่ restore จาก snapshot ไม่เจอ จึงวนลูปลบ 0 แถว และ stage `Prune` ไม่มีวันเสร็จ — เช็คยืนยันได้ว่า:
+Root cause: `reth.toml` in the datadir defines `[prune.segments]`, but the pruner can't find a prune target in the snapshot-restored data, so it loops deleting 0 rows and the `Prune` stage never finishes. You can confirm it with:
 
 ```bash
-docker logs thaifi-node 2>&1 | grep -c "pruned=0"                        # เพิ่มขึ้นเรื่อย ๆ = ใช่
-docker logs thaifi-node 2>&1 | grep -oE "checkpoint=[0-9]+" | tail -1    # นิ่งตัวเดิมตลอด = วนลูป
+docker logs thaifi-node 2>&1 | grep -c "pruned=0"                        # keeps increasing = this is it
+docker logs thaifi-node 2>&1 | grep -oE "checkpoint=[0-9]+" | tail -1    # frozen at the same value = looping
 ```
 
-วิธีแก้ — ปิด prune segments (node จะเก็บ history เต็ม ใช้ดิสก์มากขึ้น แต่สำหรับ chain นี้ยังเล็กมาก):
+Fix — disable the prune segments (the node keeps full history and uses more disk, but for this chain it's still tiny):
 
 ```bash
 docker compose stop
-cd data                      # หรือ path ของ datadir จริง
-cp reth.toml reth.toml.bak   # backup เสมอ
-# ลบทิ้งตั้งแต่ [prune.segments] จนถึงก่อน [peers] แล้วคืน section เปล่ากลับมา
+cd data                      # or your actual datadir path
+cp reth.toml reth.toml.bak   # always back up first
+# delete everything from [prune.segments] up to (but not including) [peers], then restore an empty section
 sed -i '/^\[prune\.segments\]/,/^\[peers\]/{/^\[peers\]/!d}' reth.toml
 sed -i '/^\[peers\]/i [prune.segments]\n' reth.toml
 cd .. && docker compose up -d
 ```
 
-หลังแก้ pipeline จะไล่ stage ต่อจาก checkpoint เดิมทันที (ไม่ต้องโหลด snapshot ใหม่) แล้ว node จะเริ่ม follow tip ได้ตาม §3
+After the fix, the pipeline resumes from the previous checkpoint immediately (no snapshot re-download needed), and the node starts following the tip as described in §3.
 
-> หมายเหตุ: อาการนี้พบกับ datadir ที่ restore จาก snapshot — node ที่ sync จาก genesis ตั้งแต่ต้นไม่พบ
+> Note: this issue affects datadirs restored from a snapshot — nodes synced from genesis from the start are not affected.
 
-### 7.2 Build image เองสำหรับ CPU ไม่มี AVX2
+### 7.2 Build the image yourself for CPUs without AVX2
 
-ตรวจก่อน: `grep -q avx2 /proc/cpuinfo && echo HAS_AVX2 || echo NO_AVX2`
+Check first: `grep -q avx2 /proc/cpuinfo && echo HAS_AVX2 || echo NO_AVX2`
 
-ถ้า `NO_AVX2` — official image จะ `--version` ผ่าน แต่ crash (`exit code 132` / SIGILL) ตอนทำงานจริง เช่น ตอนรัน `tempo download` หรือ node ต้อง compile เองดังนี้:
+If `NO_AVX2` — the official image passes `--version` but crashes (`exit code 132` / SIGILL) under real workloads, e.g. when running `tempo download` or the node itself; you must compile it yourself as follows:
 
 ```bash
-# 1) โคลน tempo ที่ commit เดียวกับ image (ดู Commit SHA จาก:
+# 1) Clone tempo at the same commit as the image (get the Commit SHA from:
 #    docker run --rm --entrypoint tempo ghcr.io/tempoxyz/tempo:latest --version)
 git clone https://github.com/tempoxyz/tempo && cd tempo
 git fetch --depth 1 origin <COMMIT_SHA> && git checkout FETCH_HEAD
 
-# 2) build ใน container rust:1-bookworm ให้ glibc ตรงกับ base image ของ tempo (Debian 12 / glibc 2.36)
-#    ใช้เวลา ~30-60 นาที
+# 2) Build inside a rust:1-bookworm container so glibc matches tempo's base image (Debian 12 / glibc 2.36)
+#    takes ~30-60 minutes
 docker run -d --name tempo-build \
   -v $PWD:/repo -w /repo rust:1-bookworm \
   bash -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y clang libclang-dev cmake pkg-config && \
@@ -213,24 +213,24 @@ docker run -d --name tempo-build \
            cp target/release/tempo /repo/tempo-x86-64 && echo BUILD_DONE"
 docker logs -f tempo-build
 
-# 3) patch binary ลง image แล้วเปลี่ยน image ใน docker-compose.yml เป็น tempo:x86-64
+# 3) Patch the binary into an image, then change the image in docker-compose.yml to tempo:x86-64
 printf 'FROM ghcr.io/tempoxyz/tempo:latest\nCOPY tempo-x86-64 /usr/local/bin/tempo\n' > Dockerfile.patch
 docker build -f Dockerfile.patch -t tempo:x86-64 .
 docker run --rm tempo:x86-64 --version   # smoke test
 ```
 
-กับดักที่เจอจริง (รวมเป็น 3 รอบ build กว่าจะผ่าน):
+Real-world pitfalls (3 build rounds before it succeeded):
 
-- **ห้ามใช้ `rust:latest`** (ปัจจุบันเป็น trixie / glibc 2.41) — binary ที่ได้จะฟ้อง `GLIBC_2.38 not found` บน base image ของ tempo ให้ใช้ `rust:1-bookworm` เสมอ
-- **ถ้า dir เดิมเคย build ด้วย distro อื่น ต้อง `rm -rf target` ก่อน build ใหม่** — cache ของ native artifacts (เช่น librocksdb.a) จำ fingerprint ของ compiler แล้วปล่อย object ที่ผูกกับ glibc ใหม่ไป link ซ้ำ ทำให้ยังเจอ error เดิมแม้เปลี่ยนมา build บน bookworm แล้ว
-- `--version` ผ่าน**ยังไม่พอ** — ต้องลองงานจริง (เช่น `tempo download ... --manifest-url ...`) เพราะ instruction ที่ CPU ไม่รองรับจะไป crash ตอน runtime path ที่รันหนัก ๆ เท่านั้น
+- **Do not use `rust:latest`** (currently trixie / glibc 2.41) — the resulting binary fails with `GLIBC_2.38 not found` on tempo's base image; always use `rust:1-bookworm`
+- **If the same dir was previously built with a different distro, `rm -rf target` before rebuilding** — native artifact caches (e.g. librocksdb.a) remember the compiler fingerprint and hand over objects bound to the new glibc for linking, so the same error persists even after switching to bookworm
+- Passing `--version` is **not enough** — test a real workload (e.g. `tempo download ... --manifest-url ...`) because unsupported instructions only crash in the heavy runtime paths
 
-## 8. ข้อมูล Chain
+## 8. Chain Information
 
-| ค่า | ค่า |
+| Setting | Value |
 |---|---|
 | Chain ID | 17 |
-| ประเภท | Tempo fork (T11 active — **T12 กำหนดวิ่ง 2026-10-06 14:00 UTC / 21:00 ไทย**) |
+| Type | Tempo fork (T11 active — **T12 scheduled to activate 2026-10-06 14:00 UTC / 21:00 Bangkok**) |
 | Block time | 250 ms |
 | Fee token | pathUSD `0x20c0000000000000000000000000000000000000` (6 dec) |
 | Public RPC | `https://rpc.thaifi.com` |
@@ -242,4 +242,4 @@ docker run --rm tempo:x86-64 --version   # smoke test
 
 ---
 
-หากต้องการเป็น **validator** หรือพบปัญหาการเชื่อมต่อ ติดต่อทีม ThaiFi · [thaifi.com](https://thaifi.com)
+To become a **validator**, or if you hit connectivity issues, contact the ThaiFi team · [thaifi.com](https://thaifi.com)

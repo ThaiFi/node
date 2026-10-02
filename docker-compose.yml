@@ -1,9 +1,9 @@
 # ThaiFi node — follower/RPC node (chain id 17)
-# ใช้ร่วมกับคู่มือใน README.md
+# Used together with the guide in README.md
 #
-# ก่อนรัน:
+# Before running:
 #   1) mkdir -p data && printf '%s' "$(openssl rand -hex 32)" > data/discovery-secret
-#   2) (แนะนำ) โหลด snapshot แทนการ sync จาก genesis — ดู README.md §2
+#   2) (recommended) load a snapshot instead of syncing from genesis — see README.md §2
 services:
   node:
     image: ghcr.io/tempoxyz/tempo@sha256:1ac53d67fa9738f5a10de50f2e3e3e77f9ac598ad7a8c6bdf68c6921f09194e7
@@ -42,12 +42,12 @@ services:
       - "30303"
       - --discovery.port
       - "30306"
-      # เชื่อมตรงกับ validator ของ ThaiFi (P2P)
+      # Connect directly to ThaiFi validators (P2P)
       - --trusted-peers
       - "enode://3e9124710f7017b7e7621883f8b3faa56718c524143aa3e2b3821093ed403d50d3f54abda29d4165fa3634aa53f85ca414f5491a6f0baa51dea7a538659bbac3@119.59.123.101:31303,enode://5d373e710844cacb2738f75f496aa56b217a48102e16d50cf1c727168c99a99ca38100e6af0845b0a8b01dd4ecf0cb5fede69c292e481a50dd240c7fc98bd4eb@119.59.123.101:31304,enode://baa0aa5b9e0dfe6b9fd0f7700be73ced16693ab22f810afe7bb998d53f3a4325ea51afb3f472570a7621e172d5fc6472c50be5feef0efd3287895b5102d7ad81@119.59.123.107:30303"
-      # ไม่ใช้ bootnodes สาธารณะของ Tempo (chain อื่น)
+      # Do not use Tempo's public bootnodes (other chains)
       - --tempo.bootnodes-endpoint
       - none
-      # ตาม consensus ผ่าน public follow stream ของ ThaiFi
+      # Follow consensus via ThaiFi's public follow stream
       - --follow
       - wss://ws.thaifi.com
