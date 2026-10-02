@@ -6,7 +6,7 @@
 #   2) (recommended) load a snapshot instead of syncing from genesis — see README.md §2
 services:
   node:
-    image: ghcr.io/tempoxyz/tempo@sha256:1ac53d67fa9738f5a10de50f2e3e3e77f9ac598ad7a8c6bdf68c6921f09194e7
+    image: ghcr.io/tempoxyz/tempo@sha256:5bcd6117d8bdadb7b659acc69a3792fd8b682e3c4821b1daad071ac746e1667a
     container_name: thaifi-node
     network_mode: host
     restart: unless-stopped
