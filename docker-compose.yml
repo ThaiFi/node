@@ -6,7 +6,7 @@
 #   2) (recommended) load a snapshot instead of syncing from genesis — see README.md §2
 services:
   node:
-    image: ghcr.io/thaifi/thbos:thbos-v1.18.0
+    image: ghcr.io/thaifi/thbos:thbos-v1.18.2
     container_name: thaifi-node
     network_mode: host
     restart: unless-stopped
