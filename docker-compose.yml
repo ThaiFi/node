@@ -42,9 +42,10 @@ services:
       - "30303"
       - --discovery.port
       - "30306"
-      # Connect directly to ThaiFi validators (P2P)
+      # Connect to ThaiFi's public RPC node (P2P) — validator IPs are kept private;
+      # your node discovers additional peers automatically from here
       - --trusted-peers
-      - "enode://3e9124710f7017b7e7621883f8b3faa56718c524143aa3e2b3821093ed403d50d3f54abda29d4165fa3634aa53f85ca414f5491a6f0baa51dea7a538659bbac3@65.21.195.240:31303,enode://5d373e710844cacb2738f75f496aa56b217a48102e16d50cf1c727168c99a99ca38100e6af0845b0a8b01dd4ecf0cb5fede69c292e481a50dd240c7fc98bd4eb@65.21.195.240:31304,enode://baa0aa5b9e0dfe6b9fd0f7700be73ced16693ab22f810afe7bb998d53f3a4325ea51afb3f472570a7621e172d5fc6472c50be5feef0efd3287895b5102d7ad81@65.21.195.241:31403"
+      - "enode://85b126a437e2552abc041d98a613aa4a1928186eaac403d61a059f9555f380bc3d6166a78e4bb23229bdbe363c4a0a687732725a7cfd1edf7d731223d9049d94@65.21.192.220:31320"
       # Do not use Tempo's public bootnodes (other chains)
       - --tempo.bootnodes-endpoint
       - none

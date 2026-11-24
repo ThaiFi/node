@@ -78,7 +78,7 @@ docker logs thaifi-node --tail 20
 
 **Check whether it keeps up with the tip:** run the two commands above and subtract the results — if the gap (distance from the public RPC) stays constant or shrinks to just a few blocks, you are synced. But if the gap **keeps growing**, the machine cannot execute blocks at the chain's 4 blocks/s rate — go back and review the disk requirements in §1.
 
-**Transaction propagation (P2P):** the compose file already sets `--trusted-peers` to ThaiFi's 3 validators — your node receives txs/blocks directly from the validators.
+**Transaction propagation (P2P):** the compose file sets `--trusted-peers` to ThaiFi's public RPC node (validator IPs are kept private) — your node receives txs/blocks from it and discovers additional peers automatically.
 
 ## 4. Sync from genesis (alternative — no snapshot)
 
