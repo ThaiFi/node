@@ -1,6 +1,6 @@
 # ThaiFi Node
 
-Guide to running a node on **ThaiFi Chain** (chain id **17**) — a blockchain forked from [Tempo](https://github.com/tempoxyz/tempo), maintained as **THBOS** ([ThaiFi/thbos](https://github.com/ThaiFi/thbos)), that uses **pathUSD** (6 decimals) as the fee token, with a 250 ms block time.
+Guide to running a node on **ThaiFi Chain** (chain id **17**) — a blockchain forked from [Tempo](https://github.com/tempoxyz/tempo), maintained as **THBOS** ([ThaiFi/thbos](https://github.com/ThaiFi/thbos)), that uses **pathTHB** (6 decimals) as the fee token, with a 250 ms block time.
 
 Node types covered by this guide: **full node / RPC follower** (not a validator — adding a validator requires approval from the ThaiFi team).
 
@@ -23,7 +23,7 @@ Node types covered by this guide: **full node / RPC follower** (not a validator 
 >
 > ⚠️ **Avoid ZFS for the datadir**: reth detects and warns about this at startup — ZFS CoW interacts very poorly with MDBX; measured on the same workload, writes reach only ~4.5 MB/s on ZFS vs ~20 MB/s on ext4. A ZFS pool is fine for general storage, but keep the datadir on a separate ext4/xfs filesystem.
 
-> ℹ️ **Image**: `ghcr.io/thaifi/thbos:v1.16.1-fee0.01` — ThaiFi's own build of the `v1.16.1` release plus the ThaiFi fee schedule ([source](https://github.com/ThaiFi/thbos/tree/thbos-v1.16.1)). If the bundled `tempo download` gives you trouble with the snapshot (see §7.1), report it to the ThaiFi team — we build and validate these images ourselves.
+> ℹ️ **Image**: `ghcr.io/thaifi/thbos:thbos-v1.18.3` — ThaiFi's own build of upstream `v1.18.3` plus the THBOS patches (THB fee schedule, setName/setSymbol/setCurrency on TIP-20 — [source](https://github.com/ThaiFi/thbos/tree/thbos-v1.18.3)). If the bundled `tempo download` gives you trouble with the snapshot (see §7.1), report it to the ThaiFi team — we build and validate these images ourselves.
 
 ## 2. Quick Start (recommended — start from a snapshot)
 
@@ -42,7 +42,7 @@ printf '%s' "$(openssl rand -hex 32)" > data/discovery-secret
 docker run --rm \
   -v $PWD/data:/data \
   -v $PWD/genesis.json:/config/genesis.json:ro \
-  ghcr.io/thaifi/thbos:v1.16.1-fee0.01 \
+  ghcr.io/thaifi/thbos:thbos-v1.18.3 \
   download \
   --manifest-url https://snapshots.thaifi.com/snapshots/current/manifest.json \
   --datadir /data \
@@ -104,13 +104,13 @@ Add the network in MetaMask / any EIP-3085-capable wallet:
 |---|---|
 | Chain ID | `17` (`0x11`) |
 | RPC URL | `https://rpc.thaifi.com` |
-| Currency | `pathUSD` (6 decimals) |
+| Currency | `pathTHB` (6 decimals) |
 | Explorer | `https://exp.thaifi.com` |
 
 **Tempo-based chain notes:**
-- fees/gas are paid in **pathUSD** (`0x20c0000000000000000000000000000000000000`, 6 decimals) — not native ETH
+- fees/gas are paid in **pathTHB** (`0x20c0000000000000000000000000000000000000`, 6 decimals) — not native ETH (renamed from pathUSD on 2026-10-22; token currency label is `THB` since 2026-11-03)
 - every TIP-20 token uses **6 decimals** (not 18 like typical ERC-20)
-- **base fee ≈ 0.01 USD per standard transfer** (since 2026-10-21) — rises toward 0.20 USD automatically under congestion
+- **base fee ≈ 0.01 THB per standard transfer** (THBOS schedule, active since 2026-10-21) — rises automatically under congestion
 
 ## 6. Snapshots
 
@@ -135,7 +135,7 @@ docker run --rm \
   -v $PWD/data:/data \
   -v $PWD/genesis.json:/genesis.json:ro \
   -v $PWD/snapshot-output:/output \
-  ghcr.io/thaifi/thbos:v1.16.1-fee0.01 \
+  ghcr.io/thaifi/thbos:thbos-v1.18.3 \
   snapshot-manifest \
   --source-datadir /data \
   --consensus.datadir /data/consensus \
@@ -152,7 +152,7 @@ docker compose up -d   # bring the node straight back up, then upload at your le
 | Symptom | Cause / fix |
 |---|---|
 | `connected_peers=0` for unusually long | firewall blocking `30303` TCP/UDP — open both outbound and inbound |
-| `Illegal instruction` (SIGILL) when running the container | you are running an upstream `tempoxyz` image (compiled with newer instruction sets) — use the THBOS image `ghcr.io/thaifi/thbos:v1.16.1-fee0.01` instead, which runs on old CPUs |
+| `Illegal instruction` (SIGILL) when running the container | you are running an upstream `tempoxyz` image (compiled with newer instruction sets) — use the THBOS image `ghcr.io/thaifi/thbos:thbos-v1.18.3` instead, which runs on old CPUs |
 | self-built binary reports `GLIBC_2.38 not found` / `CXXABI_1.3.15 not found` | wrong build base — you must use the `rust:1-bookworm` container (glibc matching the tempo image); if the same dir was previously built with a different distro, `rm -rf target` first, see **§7.2** |
 | node stuck at the `Prune` stage, logging `pruned=0` thousands of times per second, `eth_blockNumber` frozen at the snapshot block | **prune loop** — seen with datadirs restored from a snapshot; fix in **§7.1** |
 | node runs but the gap vs the public RPC keeps growing | the machine cannot execute 4 blocks/s — meet the §1 specs (SSD/NVMe) and make sure the datadir is on ext4/xfs, not ZFS |
@@ -204,10 +204,10 @@ If you ever need to build the upstream image yourself for an old CPU: compile in
 | Setting | Value |
 |---|---|
 | Chain ID | 17 |
-| Type | Tempo fork — THBOS ([ThaiFi/thbos](https://github.com/ThaiFi/thbos)) · T12 active · **THBOS fee schedule active since 2026-10-21 19:40 ICT** (standard TIP-20 transfer = 0.01 USD) |
-| Node image | `ghcr.io/thaifi/thbos:v1.16.1-fee0.01` ([branch `thbos-v1.16.1`](https://github.com/ThaiFi/thbos/tree/thbos-v1.16.1)) |
+| Type | Tempo fork — THBOS ([ThaiFi/thbos](https://github.com/ThaiFi/thbos)) · T12 active · **THBOS fee schedule active since 2026-10-21 19:40 ICT** (standard TIP-20 transfer = 0.01 THB) |
+| Node image | `ghcr.io/thaifi/thbos:thbos-v1.18.3` ([branch `thbos-v1.18.3`](https://github.com/ThaiFi/thbos/tree/thbos-v1.18.3)) |
 | Block time | 250 ms |
-| Fee token | pathUSD `0x20c0000000000000000000000000000000000000` (6 dec) |
+| Fee token | pathTHB `0x20c0000000000000000000000000000000000000` (6 dec) |
 | Public RPC | `https://rpc.thaifi.com` |
 | Follow WS | `wss://ws.thaifi.com` |
 | Explorer | `https://exp.thaifi.com` |
